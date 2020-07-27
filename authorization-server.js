@@ -53,6 +53,82 @@ app.use(bodyParser.urlencoded({ extended: true }))
 /*
 Your code here
 */
+app.get("/authorize", (req, res) => {
+	const clientId = req.query.client_id;
+	const client = clients[clientId];
+	if (!client) {
+		return res.status(401).end();
+	}
+
+	if (req.query.scope && !containsAll(client.scopes, req.query.scope.split(" "))) {
+		return res.status(401).end();
+	}
+
+	const requestId = randomString();
+	requests[requestId] = req.query;
+
+	const params = {};
+	params["client"] = client;
+	params["scope"] = req.query.scope;
+	params["requestId"] = requestId;
+
+	res.render("login", params);
+})
+
+app.post("/approve", (req, res) => {
+	const { userName, password, requestId } = req.body;
+
+	if (!userName || users[userName] !== password) {
+		return res.status(401).end();
+	}
+
+	if (!requests[requestId]) {
+		return res.status(401).end();
+	}
+
+	const request = requests[requestId];
+	delete requests[requestId];
+	const code = randomString();
+	authorizationCodes[code] = {
+		"clientReq": request,
+		"userName": userName
+	};
+	const redirectUri = request["redirect_uri"];
+	const state = request["state"];
+	const finalUri = new URL(redirectUri);
+	finalUri.searchParams.append('code', code);
+	finalUri.searchParams.append('state', state);
+	res.redirect(finalUri);
+})
+
+app.post('/token', (req, res) => {
+	const authToken = req.headers.authorization;
+	if (!authToken) {
+		return res.status(401).end();
+	}
+
+	const { clientId, clientSecret } = decodeAuthCredentials(authToken);
+
+	if (!clients[clientId] || clients[clientId].clientSecret !== clientSecret) {
+		return res.status(401).end();
+	}
+
+	if (!req.body.code || !authorizationCodes[req.body.code]) {
+		return res.status(401).end();
+	}
+
+	const obj = authorizationCodes[req.body.code];
+	delete authorizationCodes[req.body.code];
+
+	const privateKey = fs.readFileSync('./assets/private_key.pem');
+	const accessToken = jwt.sign({ userName: obj.userName, scope: obj.clientReq.scope }, privateKey, { algorithm: 'RS256' });
+	const returnJsonBody = {
+		"access_token": accessToken,
+		"token_type": "Bearer"
+	};
+
+	return res.status(200).json(returnJsonBody);
+})
 
 const server = app.listen(config.port, "localhost", function () {
 	var host = server.address().address
