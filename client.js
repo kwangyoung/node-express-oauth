@@ -26,6 +26,41 @@ app.use(bodyParser.urlencoded({ extended: true }))
 /*
 Your code here
 */
+app.get('/authorize', (req, res) => {
+	state = randomString();
+	const finalUri = new URL(config.authorizationEndpoint);
+	finalUri.searchParams.append('response_type', "code");
+	finalUri.searchParams.append('client_id', config.clientId);
+	finalUri.searchParams.append('client_secret', config.clientSecret);
+	finalUri.searchParams.append('redirect_uri', config.redirectUri);
+	finalUri.searchParams.append('scope', "permission:name permission:date_of_birth");
+	finalUri.searchParams.append('state', state);
+	res.redirect(finalUri);
+})
+
+app.get('/callback', (req, res) => {
+	if (!req.query.state || req.query.state !== state) {
+		return res.status(403).send("Error: state is not matched");
+	}
+
+	axios({
+		method: 'POST',
+		url: config.tokenEndpoint,
+		auth: { username: config.clientId, password: config.clientSecret },
+		data: { code: req.query.code }
+	})
+		.then(response => {
+			return axios({
+				method: 'GET',
+				url: config.userInfoEndpoint,
+				headers: { authorization: `bearer ${response.data.access_token}` }
+			})
+				.then(response => {
+					res.render("welcome", { user: response.data });
+				});
+		});
+
+})
 
 const server = app.listen(config.port, "localhost", function () {
 	var host = server.address().address
