@@ -57,11 +57,11 @@ app.get("/authorize", (req, res) => {
 	const clientId = req.query.client_id;
 	const client = clients[clientId];
 	if (!client) {
-		return res.status(401).end();
+		return res.status(401).send("Error: client not authorized");
 	}
 
 	if (req.query.scope && !containsAll(client.scopes, req.query.scope.split(" "))) {
-		return res.status(401).end();
+		return res.status(401).send("Error: invalid scopes requested");
 	}
 
 	const requestId = randomString();
@@ -79,11 +79,11 @@ app.post("/approve", (req, res) => {
 	const { userName, password, requestId } = req.body;
 
 	if (!userName || users[userName] !== password) {
-		return res.status(401).end();
+		return res.status(401).send("Error: user not authorized");
 	}
 
 	if (!requests[requestId]) {
-		return res.status(401).end();
+		return res.status(401).send("Error: invalid user request");
 	}
 
 	const request = requests[requestId];
@@ -104,24 +104,23 @@ app.post("/approve", (req, res) => {
 app.post('/token', (req, res) => {
 	const authToken = req.headers.authorization;
 	if (!authToken) {
-		return res.status(401).end();
+		return res.status(401).send("Error: not authorized");
 	}
 
 	const { clientId, clientSecret } = decodeAuthCredentials(authToken);
 
 	if (!clients[clientId] || clients[clientId].clientSecret !== clientSecret) {
-		return res.status(401).end();
+		return res.status(401).send("Error: client not authorized");
 	}
 
 	if (!req.body.code || !authorizationCodes[req.body.code]) {
-		return res.status(401).end();
+		return res.status(401).send("Error: invalid code");
 	}
 
 	const obj = authorizationCodes[req.body.code];
 	delete authorizationCodes[req.body.code];
 
-	const privateKey = fs.readFileSync('./assets/private_key.pem');
-	const accessToken = jwt.sign({ userName: obj.userName, scope: obj.clientReq.scope }, privateKey, { algorithm: 'RS256' });
+	const accessToken = jwt.sign({ userName: obj.userName, scope: obj.clientReq.scope }, config.privateKey, { algorithm: 'RS256' });
 	const returnJsonBody = {
 		"access_token": accessToken,
 		"token_type": "Bearer"
